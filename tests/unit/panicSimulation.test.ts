@@ -2,6 +2,7 @@ import assert from "node:assert/strict";
 import { test } from "node:test";
 import { Address, SorobanDataBuilder, rpc, xdr } from "@stellar/stellar-sdk";
 import { describeAuthorization, simulateFreeze } from "../../lib/guard/guardOps.ts";
+import { calculateFeeHeadroom } from "../../lib/guard/feeEstimator.ts";
 import { INCLUSION_FEE } from "../../lib/guard/submit.ts";
 
 const SOURCE = "GAOBCRXTCO4ZCBNHALJUMJJ5JDXNOUZ7U6VZJX4UBTXAHQEO66IPU6PH";
@@ -119,10 +120,17 @@ test("a freeze dry run reports resources and refuses to sign or broadcast", asyn
   assert.equal(result.dryRun, true);
   if (result.kind !== "simulated") return;
 
-  // Fees: the resource fee from preflight plus the inclusion floor.
+  // Fees: the preflight resource fee is reported unbuffered, but the fee the
+  // envelope actually carries is the inclusion floor plus that resource fee
+  // after the Standard-preset headroom the SDK applies (15%), so the total is
+  // higher than resourceFee + inclusionFee.
   assert.equal(result.resourceFeeStroops, "100");
   assert.equal(result.inclusionFeeStroops, INCLUSION_FEE);
-  assert.equal(result.totalFeeStroops, "200");
+  const paddedResourceFee = calculateFeeHeadroom(0, BigInt(result.resourceFeeStroops)).fee;
+  assert.equal(
+    result.totalFeeStroops,
+    (BigInt(INCLUSION_FEE) + paddedResourceFee).toString(),
+  );
   assert.equal(result.latestLedger, 4242);
   assert.ok(result.footprintEntries >= 0);
 
